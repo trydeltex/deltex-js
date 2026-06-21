@@ -27,7 +27,7 @@ __export(index_exports, {
   default: () => index_default
 });
 module.exports = __toCommonJS(index_exports);
-var VERSION = "1.4.0";
+var VERSION = "1.4.2";
 var DeltexError = class extends Error {
   constructor(message, status = 0, sql = null, engineMessage = message) {
     super(message);

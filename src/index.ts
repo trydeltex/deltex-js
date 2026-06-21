@@ -34,7 +34,7 @@
 export type Row = Record<string, unknown>;
 
 /** SDK version. */
-export const VERSION = "1.4.0";
+export const VERSION = "1.4.2";
 
 /** SQL parameter value — any JSON-serializable scalar. */
 export type Param = string | number | boolean | null | object;

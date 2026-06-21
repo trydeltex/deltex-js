@@ -1,5 +1,5 @@
 // src/index.ts
-var VERSION = "1.4.0";
+var VERSION = "1.4.2";
 var DeltexError = class extends Error {
   constructor(message, status = 0, sql = null, engineMessage = message) {
     super(message);

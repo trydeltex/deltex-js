@@ -30,7 +30,7 @@
 /** A row returned by the engine — column name → value. */
 type Row = Record<string, unknown>;
 /** SDK version. */
-declare const VERSION = "1.4.0";
+declare const VERSION = "1.4.2";
 /** SQL parameter value — any JSON-serializable scalar. */
 type Param = string | number | boolean | null | object;
 /** Write mode for mutating queries. */
