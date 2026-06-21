@@ -1,6 +1,6 @@
 import {
   pgProxyQuery
-} from "./chunk-6MM6A4LJ.mjs";
+} from "./chunk-VYHCO57O.mjs";
 
 // src/drizzle.ts
 import { drizzle as pgProxyDrizzle } from "drizzle-orm/pg-proxy";

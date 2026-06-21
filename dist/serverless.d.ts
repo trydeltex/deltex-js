@@ -17,7 +17,7 @@ interface DeltexHttpConfig {
     apiKey?: string;
     /** Engine endpoint. Defaults to `process.env.DELTEX_ENDPOINT ?? "https://db.deltex.dev"`. */
     endpoint?: string;
-    /** Write mode for mutating statements: "edge" (default) | "sync" | "async". */
+    /** Write mode for mutating statements: "sync" (default, durable) | "edge" | "async". */
     writeMode?: "edge" | "sync" | "async";
     /** Request timeout (ms). @default 30000 */
     timeoutMs?: number;

@@ -77,7 +77,7 @@ function resolveConfig(connectionStringOrConfig, extra) {
     ...cfg,
     apiKey,
     endpoint,
-    writeMode: cfg.writeMode ?? "edge",
+    writeMode: cfg.writeMode ?? "sync",
     timeoutMs: cfg.timeoutMs ?? 3e4
   };
 }

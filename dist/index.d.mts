@@ -80,10 +80,13 @@ interface ClientOptions {
     endpoint?: string;
     /**
      * Default write mode.
-     * - `"edge"` (default) — CAS-protected async (~10ms). Best for ASIA/AUS PoPs.
-     * - `"sync"` — Synchronous KV ack (~350ms). Strongest durability.
-     * - `"async"` — Fire-and-forget (~5ms). Best for high-volume telemetry.
-     * @default "edge"
+     * - `"sync"` (default) — synchronous durable commit (~340ms). Never loses an
+     *   acknowledged write. Batch writes (multi-row INSERT / transaction) to amortize.
+     * - `"edge"` — CAS-protected async (~10ms). Acknowledges before the durable
+     *   commit lands; a concurrent write from another PoP node can clobber it. Use
+     *   for caches, sessions, idempotent upserts — not data that must not be lost.
+     * - `"async"` — Fire-and-forget (~5ms). No ack, no conflict detection.
+     * @default "sync"
      */
     writeMode?: WriteMode;
     /**
@@ -213,6 +216,23 @@ interface Client {
      * ```
      */
     transaction: <T>(fn: (tx: Client) => Promise<T>) => Promise<T>;
+    /**
+     * Atomically execute an array of SQL statements in ONE round-trip.
+     *
+     * This is the fastest way to apply many writes: the engine coalesces them into
+     * a single durable KV commit, so N statements cost ~one write (~O(1)) instead of
+     * N separate round-trips (~N × 300ms). Use this — or a single multi-row INSERT —
+     * instead of looping `execute()` for bulk work.
+     *
+     * Runs as a transaction (all-or-nothing). Returns total rows affected.
+     *
+     * @example
+     * ```ts
+     * // 78 inserts in ~one durable write instead of 78 round-trips
+     * await db.batch(rows.map(r => `INSERT INTO t (id, v) VALUES (${r.id}, '${r.v}')`));
+     * ```
+     */
+    batch: (statements: string[]) => Promise<number>;
     /**
      * Return a copy of this client with a different write mode.
      *

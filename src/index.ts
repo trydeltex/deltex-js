@@ -89,10 +89,13 @@ export interface ClientOptions {
   endpoint?: string;
   /**
    * Default write mode.
-   * - `"edge"` (default) — CAS-protected async (~10ms). Best for ASIA/AUS PoPs.
-   * - `"sync"` — Synchronous KV ack (~350ms). Strongest durability.
-   * - `"async"` — Fire-and-forget (~5ms). Best for high-volume telemetry.
-   * @default "edge"
+   * - `"sync"` (default) — synchronous durable commit (~340ms). Never loses an
+   *   acknowledged write. Batch writes (multi-row INSERT / transaction) to amortize.
+   * - `"edge"` — CAS-protected async (~10ms). Acknowledges before the durable
+   *   commit lands; a concurrent write from another PoP node can clobber it. Use
+   *   for caches, sessions, idempotent upserts — not data that must not be lost.
+   * - `"async"` — Fire-and-forget (~5ms). No ack, no conflict detection.
+   * @default "sync"
    */
   writeMode?: WriteMode;
   /**
@@ -244,6 +247,24 @@ export interface Client {
    * ```
    */
   transaction: <T>(fn: (tx: Client) => Promise<T>) => Promise<T>;
+
+  /**
+   * Atomically execute an array of SQL statements in ONE round-trip.
+   *
+   * This is the fastest way to apply many writes: the engine coalesces them into
+   * a single durable KV commit, so N statements cost ~one write (~O(1)) instead of
+   * N separate round-trips (~N × 300ms). Use this — or a single multi-row INSERT —
+   * instead of looping `execute()` for bulk work.
+   *
+   * Runs as a transaction (all-or-nothing). Returns total rows affected.
+   *
+   * @example
+   * ```ts
+   * // 78 inserts in ~one durable write instead of 78 round-trips
+   * await db.batch(rows.map(r => `INSERT INTO t (id, v) VALUES (${r.id}, '${r.v}')`));
+   * ```
+   */
+  batch: (statements: string[]) => Promise<number>;
 
   /**
    * Return a copy of this client with a different write mode.
@@ -514,7 +535,7 @@ function resolveOptions(options: ClientOptions): ResolvedOptions {
     "https://db.deltex.dev"
   ).replace(/\/$/, "");
 
-  const writeMode = options.writeMode ?? "edge";
+  const writeMode = options.writeMode ?? "sync";
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${apiKey}`,
@@ -588,6 +609,14 @@ function makeClient(opts: ResolvedOptions): Client {
     }
 
     // Send collected statements to /transaction endpoint atomically
+    await sendStatements(statements, "SERIALIZABLE");
+
+    return userResult;
+  };
+
+  // Send an array of statements to the transaction endpoint in one round-trip.
+  // Returns the total rows affected. Shared by transaction() and batch().
+  const sendStatements = async (statements: string[], isolation: string): Promise<number> => {
     let controller: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (opts.timeoutMs > 0) {
@@ -598,7 +627,7 @@ function makeClient(opts: ResolvedOptions): Client {
       const resp = await opts.fetchFn(opts.txUrl, {
         method: "POST",
         headers: opts.headers,
-        body: JSON.stringify({ statements, isolation: "SERIALIZABLE" }),
+        body: JSON.stringify({ statements, isolation }),
         signal: controller?.signal,
       });
       const body = await resp.json() as Record<string, unknown>;
@@ -606,11 +635,15 @@ function makeClient(opts: ResolvedOptions): Client {
         const msg = String(body["message"] ?? body["error"] ?? "Transaction failed");
         throw new DeltexError(msg, resp.status, statements.join("; "), msg);
       }
+      return typeof body["affected_rows"] === "number" ? body["affected_rows"] as number : 0;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
+  };
 
-    return userResult;
+  client.batch = async (statements: string[]): Promise<number> => {
+    if (statements.length === 0) return 0;
+    return sendStatements(statements, "SERIALIZABLE");
   };
 
   client.withWriteMode = (mode: WriteMode): Client => {

@@ -58,9 +58,9 @@ describe("createClient", () => {
 
   it("withWriteMode returns a new client", () => {
     const db = createClient({ apiKey: "k", fetch: mockFetch({}) as typeof fetch });
-    const sync = db.withWriteMode("sync");
-    expect(sync).toBeDefined();
-    expect(sync).not.toBe(db);
+    const edge = db.withWriteMode("edge");
+    expect(edge).toBeDefined();
+    expect(edge).not.toBe(db);
   });
 });
 
@@ -243,16 +243,58 @@ describe("withWriteMode", () => {
   it("sends correct X-Write-Mode header", async () => {
     const cap = captureFetch();
     const db = createClient({ apiKey: "k", fetch: cap.mockFetch as typeof fetch });
-    const syncDb = db.withWriteMode("sync");
-    await syncDb`INSERT INTO t VALUES (1)`;
-    expect(cap.captured.headers["X-Write-Mode"]).toBe("sync");
+    const edgeDb = db.withWriteMode("edge");
+    await edgeDb`INSERT INTO t VALUES (1)`;
+    expect(cap.captured.headers["X-Write-Mode"]).toBe("edge");
   });
 
-  it("default write mode is edge", async () => {
+  it("default write mode is sync (durable)", async () => {
     const cap = captureFetch();
     const db = createClient({ apiKey: "k", fetch: cap.mockFetch as typeof fetch });
     await db`SELECT 1`;
-    expect(cap.captured.headers["X-Write-Mode"]).toBe("edge");
+    expect(cap.captured.headers["X-Write-Mode"]).toBe("sync");
+  });
+});
+
+describe("batch", () => {
+  it("sends all statements in ONE request to the transaction endpoint", async () => {
+    let calls = 0;
+    let capturedUrl = "";
+    let capturedStatements: string[] = [];
+    const fetchFn: MockFetch = async (url: unknown, opts: unknown) => {
+      calls++;
+      capturedUrl = String(url);
+      const body = JSON.parse((opts as RequestInit).body as string);
+      capturedStatements = body.statements;
+      return { status: 200, json: async () => ({ success: true, affected_rows: 3 }), headers: new Headers() } as Response;
+    };
+    const db = createClient({ apiKey: "k", fetch: fetchFn as typeof fetch });
+    const affected = await db.batch([
+      "INSERT INTO t VALUES (1)",
+      "INSERT INTO t VALUES (2)",
+      "INSERT INTO t VALUES (3)",
+    ]);
+    expect(calls).toBe(1); // one round-trip, not three
+    expect(capturedUrl).toContain("/v1/transaction");
+    expect(capturedStatements).toHaveLength(3);
+    expect(affected).toBe(3);
+  });
+
+  it("empty batch is a no-op (no request)", async () => {
+    let calls = 0;
+    const fetchFn: MockFetch = async () => { calls++; return { status: 200, json: async () => ({}), headers: new Headers() } as Response; };
+    const db = createClient({ apiKey: "k", fetch: fetchFn as typeof fetch });
+    const affected = await db.batch([]);
+    expect(calls).toBe(0);
+    expect(affected).toBe(0);
+  });
+
+  it("throws on batch failure", async () => {
+    const db = createClient({
+      apiKey: "k",
+      fetch: (async () => ({ status: 400, json: async () => ({ success: false, message: "boom" }), headers: new Headers() })) as unknown as typeof fetch,
+    });
+    await expect(db.batch(["INSERT INTO t VALUES (1)"])).rejects.toThrow("boom");
   });
 });
 

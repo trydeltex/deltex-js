@@ -37,7 +37,7 @@ console.log(`${n} row updated`);
 
 ## Postgres-compatible drivers (edge-native)
 
-Deltex runs on Fastly Compute (HTTP-only at the edge), so there's no raw TCP
+Deltex is HTTP-only at the edge, so there's no raw TCP
 Postgres port. Instead, `@deltex/client/serverless` exposes the familiar shapes of
 [`@neondatabase/serverless`](https://github.com/neondatabase/serverless) (`neon()`)
 and [`pg`](https://node-postgres.com/) (`Client` / `Pool`) — each query is a single
@@ -103,7 +103,7 @@ const db = createClient({ apiKey: env.DELTEX_API_KEY });
 const db = createClient({
   apiKey: env.DELTEX_API_KEY,
   endpoint: "https://db.deltex.dev",
-  writeMode: "edge", // "edge" (default) | "sync" | "async"
+  writeMode: "sync", // "sync" (default, durable) | "edge" | "async"
 });
 ```
 
@@ -111,7 +111,7 @@ const db = createClient({
 |--------|------|---------|-------------|
 | `apiKey` | `string` | `DELTEX_API_KEY` env | API key from Deltex dashboard |
 | `endpoint` | `string` | `DELTEX_ENDPOINT` env or `https://db.deltex.dev` | Engine URL |
-| `writeMode` | `"edge" \| "sync" \| "async"` | `"edge"` | Write durability mode |
+| `writeMode` | `"sync" \| "edge" \| "async"` | `"sync"` | Write durability mode |
 | `timeoutMs` | `number` | `30000` | Request timeout |
 | `fetch` | `typeof fetch` | `globalThis.fetch` | Custom fetch (Node < 18) |
 
@@ -176,11 +176,34 @@ const order = await db.transaction(async (tx) => {
 });
 ```
 
+### `db.batch(statements)` — Fastest bulk write
+
+Applies an array of SQL statements in **one round-trip**, committed atomically.
+Returns the total rows affected.
+
+```ts
+const n = await db.batch([
+  "INSERT INTO products (name, price) VALUES ('Apple', 0.99)",
+  "INSERT INTO products (name, price) VALUES ('Banana', 0.59)",
+  "UPDATE inventory SET stock = stock - 1 WHERE sku = 'A1'",
+]);
+// n === 3
+```
+
+Looping `execute` makes one durable commit per statement. `batch()` (and a
+single multi-row `INSERT`) coalesce them into **one** commit — O(1) instead of
+O(N) — so it's far faster for bulk writes. Reach for it whenever you're writing
+many rows at once.
+
+> `batch()` takes raw SQL strings (no parameter binding). For untrusted values,
+> build statements safely or use `transaction` with tagged templates — both
+> commit in one round-trip.
+
 ### `db.withWriteMode(mode)` — Per-operation write mode
 
 ```ts
-const syncDb = db.withWriteMode("sync");  // Wait for durable KV write (~350ms)
-const fastDb = db.withWriteMode("async"); // Fire and forget (~5ms)
+const syncDb = db.withWriteMode("sync");  // Wait for the durable write
+const fastDb = db.withWriteMode("async"); // Fire and forget
 
 await syncDb.exec`INSERT INTO audit_log (event) VALUES (${"payment"})`;
 ```
@@ -196,11 +219,11 @@ const users = await db.query<User>(`SELECT ${cols} FROM users WHERE id = $1`, [4
 
 ## Write Modes
 
-| Mode | Latency | Durability | Use When |
-|------|---------|------------|----------|
-| `edge` (default) | ~10ms | CAS-protected async | Normal writes, ASIA/AUS PoPs |
-| `sync` | ~350ms | Synchronous KV ack | Financial, audit logs, critical data |
-| `async` | ~5ms | Fire-and-forget | High-volume events, telemetry |
+| Mode | Durability | Use When |
+|------|------------|----------|
+| `sync` (default) | Durable commit | Everything by default; never loses an acked write |
+| `edge` | CAS-protected async, eventual durability | Caches, sessions, idempotent upserts — not loss-critical data |
+| `async` | Fire-and-forget | High-volume events, telemetry |
 
 ## Error Handling
 
@@ -253,6 +276,9 @@ export default {
 
 ### Batch insert
 
+For untrusted values, use a transaction with tagged templates — writes are
+collected and committed in **one** round-trip, safely parameterized:
+
 ```ts
 const items = [{ name: "Apple", price: 0.99 }, { name: "Banana", price: 0.59 }];
 
@@ -262,6 +288,9 @@ await db.transaction(async (tx) => {
   }
 });
 ```
+
+If you already hold an array of trusted SQL strings, `db.batch(statements)` does
+the same in one call.
 
 ## License
 

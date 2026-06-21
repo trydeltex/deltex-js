@@ -162,7 +162,7 @@ function resolveOptions(options) {
     );
   }
   const endpoint = (options.endpoint ?? (typeof process !== "undefined" ? process.env?.DELTEX_ENDPOINT : void 0) ?? "https://db.deltex.dev").replace(/\/$/, "");
-  const writeMode = options.writeMode ?? "edge";
+  const writeMode = options.writeMode ?? "sync";
   const headers = {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${apiKey}`,
@@ -206,6 +206,10 @@ function makeClient(opts) {
     if (statements.length === 0) {
       return userResult;
     }
+    await sendStatements(statements, "SERIALIZABLE");
+    return userResult;
+  };
+  const sendStatements = async (statements, isolation) => {
     let controller;
     let timer;
     if (opts.timeoutMs > 0) {
@@ -216,7 +220,7 @@ function makeClient(opts) {
       const resp = await opts.fetchFn(opts.txUrl, {
         method: "POST",
         headers: opts.headers,
-        body: JSON.stringify({ statements, isolation: "SERIALIZABLE" }),
+        body: JSON.stringify({ statements, isolation }),
         signal: controller?.signal
       });
       const body = await resp.json();
@@ -224,10 +228,14 @@ function makeClient(opts) {
         const msg = String(body["message"] ?? body["error"] ?? "Transaction failed");
         throw new DeltexError(msg, resp.status, statements.join("; "), msg);
       }
+      return typeof body["affected_rows"] === "number" ? body["affected_rows"] : 0;
     } finally {
       if (timer !== void 0) clearTimeout(timer);
     }
-    return userResult;
+  };
+  client.batch = async (statements) => {
+    if (statements.length === 0) return 0;
+    return sendStatements(statements, "SERIALIZABLE");
   };
   client.withWriteMode = (mode) => {
     if (mode === opts.writeMode) return client;

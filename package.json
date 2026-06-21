@@ -1,25 +1,37 @@
 {
   "name": "@deltex/client",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Official TypeScript/JavaScript client for Deltex \u2014 edge-native SQL database",
+  "homepage": "https://deltex.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trydeltex/deltex-js.git"
+  },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./serverless": {
+      "types": "./dist/serverless.d.ts",
       "import": "./dist/serverless.mjs",
-      "require": "./dist/serverless.js",
-      "types": "./dist/serverless.d.ts"
+      "require": "./dist/serverless.js"
     },
     "./drizzle": {
+      "types": "./dist/drizzle.d.ts",
       "import": "./dist/drizzle.mjs",
-      "require": "./dist/drizzle.js",
-      "types": "./dist/drizzle.d.ts"
+      "require": "./dist/drizzle.js"
     }
   },
   "scripts": {
@@ -55,13 +67,5 @@
     "@jest/globals": "^29.0.0",
     "ts-jest": "^29.0.0",
     "drizzle-orm": "^0.36.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/trydeltex/deltex-js.git"
-  },
-  "homepage": "https://deltex.dev",
-  "bugs": {
-    "url": "https://github.com/trydeltex/deltex-js/issues"
   }
 }

@@ -8,7 +8,7 @@ import {
   pgProxyQuery,
   serializeParams,
   toPgResult
-} from "./chunk-6MM6A4LJ.mjs";
+} from "./chunk-VYHCO57O.mjs";
 export {
   Client,
   DeltexError,
